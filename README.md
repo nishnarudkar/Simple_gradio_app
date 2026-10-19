@@ -1,118 +1,186 @@
-# 🐾 Image Classification App
+# Image Classification App
 
-[![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue?logo=python&logoColor=white)](https://www.python.org/)
-[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?logo=pytorch&logoColor=white)](https://pytorch.org/)
-[![Gradio](https://img.shields.io/badge/Gradio-4.0+-FF7C00?logo=gradio&logoColor=white)](https://gradio.app/)
+[![Python](https://img.shields.io/badge/Python-3.10%20%7C%203.11%20%7C%203.12-blue)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-EE4C2C)](https://pytorch.org/)
+[![Gradio](https://img.shields.io/badge/Gradio-4.0+-FF7C00)](https://gradio.app/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-yellow)](https://huggingface.co/spaces/Phoenixnaru/classification-gradio)
 
-An interactive, deep learning-powered web application built with **PyTorch** and **Gradio** that classifies images in real-time into three classes: **Cat**, **Dog**, or **Person**.
+An interactive computer vision application built with PyTorch and Gradio for multi-class image classification. The application evaluates input images and predicts categorical probabilities across three target classes: **Cat**, **Dog**, and **Person**.
 
 ---
 
-## 📌 Table of Contents
+## Table of Contents
 
-- [Overview](#-overview)
-- [System Architecture](#-system-architecture)
-- [Key Features](#-key-features)
-- [Model Details](#-model-details)
-- [Project Structure](#-project-structure)
-- [Getting Started](#-getting-started)
+- [Overview](#overview)
+- [System Architecture](#system-architecture)
+- [Neural Network Architecture](#neural-network-architecture)
+- [Core Features](#core-features)
+- [Repository Structure](#repository-structure)
+- [Installation and Setup](#installation-and-setup)
   - [Prerequisites](#prerequisites)
-  - [Installation](#installation)
-  - [Running the App](#running-the-app)
-- [Deployment](#-deployment)
-  - [Hugging Face Spaces](#deploying-to-hugging-face-spaces)
-- [API Reference](#-api-reference)
-- [Troubleshooting](#-troubleshooting)
-- [License](#-license)
+  - [Environment Configuration](#environment-configuration)
+  - [Dependencies](#dependencies)
+- [Usage](#usage)
+  - [Local Execution](#local-execution)
+  - [Public URL Generation](#public-url-generation)
+- [Deployment](#deployment)
+  - [Hugging Face Spaces](#hugging-face-spaces)
+- [API Reference](#api-reference)
+- [Troubleshooting](#troubleshooting)
+- [License](#license)
 
 ---
 
-## 🌟 Overview
+## Overview
 
-The **Image Classification App** provides a user-friendly browser interface for instant computer vision inference. Users can upload any photo or capture an image via webcam to detect whether the subject is a **Cat**, **Dog**, or **Person**. 
-
-The app performs end-to-end inference using a custom multi-layer Convolutional Neural Network (CNN) trained with PyTorch, automatically labels the image with bounding text annotations, and displays both the prediction and the annotated visual result.
+The Image Classification App provides a web-based inference interface designed for rapid prototyping and deployment of deep learning models. Users can supply images through local file upload or webcam capture. The processing pipeline transforms the input image, feeds it through a custom Convolutional Neural Network (CNN) trained in PyTorch, extracts categorical predictions, and overlays visual labels directly onto the rendered result.
 
 ---
 
-## 🏗 System Architecture
+## System Architecture
+
+The following diagram outlines the end-to-end data lifecycle from user interaction to visual output:
 
 ```mermaid
-graph LR
-    A[User Image Upload] --> B[Gradio Interface]
-    B --> C[Preprocessing / Normalization]
-    C --> D[Custom CNN Forward Pass]
-    D --> E[Class Prediction & Confidences]
-    E --> F[In-Memory Text Annotation]
-    F --> G[Render Results in Browser]
+flowchart TD
+    subgraph Client ["Client Layer"]
+        UI["Web Browser / Gradio Interface"]
+    end
+
+    subgraph Server ["Application Server"]
+        App["core/app.py (Gradio Server)"]
+        Handler["classify_image(image)"]
+    end
+
+    subgraph Pipeline ["Inference Engine (core/predict.py)"]
+        Pre["Transforms: Resize(128x128), ToTensor, Normalize"]
+        Model["CustomCnnModel Forward Pass"]
+        Softmax["Argmax / Class Mapping"]
+        Annotator["OpenCV Visual Badge Annotator"]
+    end
+
+    subgraph Weights ["Storage & Checkpoints"]
+        Checkpoint["model/cnn_128_model-100.pth (Git LFS)"]
+    end
+
+    UI -->|"Uploads image (PIL / NumPy)"| App
+    App --> Handler
+    Handler -->|"PIL Image"| Pre
+    Checkpoint -.->|"Model weights loaded at startup"| Model
+    Pre -->|"Normalized Tensor (1, 3, 128, 128)"| Model
+    Model -->|"Logits (1, 3)"| Softmax
+    Softmax -->|"Predicted Label"| Annotator
+    Annotator -->|"Annotated PIL Image + Label"| Handler
+    Handler -->|"Prediction Text + Labeled Image"| UI
 ```
 
 ---
 
-## ✨ Key Features
+## Neural Network Architecture
 
-- **End-to-End Deep Learning**: Powered by a custom 4-stage convolutional backbone with Batch Normalization and dynamic linear layer mapping.
-- **Real-Time Interactive UI**: Built with Gradio for clean, responsive drag-and-drop image uploads and webcam support.
-- **In-Memory Zero-Disk Inference**: Eliminates disk I/O bottlenecks and temporary file collisions during concurrent requests.
-- **ZeroGPU & Accelerator Compatibility**: Seamless dynamic hardware detection—runs out-of-the-box on CPU, local CUDA GPUs, and Hugging Face ZeroGPU.
-- **Automated Visual Labeling**: Overlays clear high-contrast predicted label badges onto the uploaded image.
-- **Large Model Tracking**: Git LFS enabled for reliable tracking of PyTorch weights (`*.pth`).
+The classification backbone (`CustomCnnModel`) consists of four sequential convolutional blocks for feature extraction followed by a multi-layer perceptron (MLP) classification head:
 
----
+```mermaid
+graph TD
+    Input["Input: (3, 128, 128)"] --> Block1
+    
+    subgraph Block1 ["Convolutional Block 1"]
+        C1["Conv2d (3 -> 32, 3x3, pad 1)"] --> BN1["BatchNorm2d"]
+        BN1 --> R1["ReLU"] --> P1["MaxPool2d (2x2, stride 2)"]
+    end
+    
+    Block1 --> Block2
+    
+    subgraph Block2 ["Convolutional Block 2"]
+        C2["Conv2d (32 -> 64, 3x3, pad 1)"] --> BN2["BatchNorm2d"]
+        BN2 --> R2["ReLU"] --> P2["MaxPool2d (2x2, stride 2)"]
+    end
+    
+    Block2 --> Block3
+    
+    subgraph Block3 ["Convolutional Block 3"]
+        C3["Conv2d (64 -> 128, 3x3, pad 1)"] --> BN3["BatchNorm2d"]
+        BN3 --> R3["ReLU"] --> P3["MaxPool2d (2x2, stride 2)"]
+    end
+    
+    Block3 --> Block4
+    
+    subgraph Block4 ["Convolutional Block 4"]
+        C4["Conv2d (128 -> 256, 3x3, pad 1)"] --> BN4["BatchNorm2d"]
+        BN4 --> R4["ReLU"] --> P4["MaxPool2d (2x2, stride 2)"]
+    end
+    
+    Block4 --> Flatten["Flatten: (1, 16384)"]
+    
+    subgraph Classifier ["Fully Connected Classification Head"]
+        Flatten --> FC1["Linear (16384 -> 512)"]
+        FC1 --> RFC1["ReLU"]
+        RFC1 --> FC2["Linear (512 -> 128)"]
+        FC2 --> RFC2["ReLU"]
+        RFC2 --> FC3["Linear (128 -> 3)"]
+    end
+    
+    FC3 --> Output["Output Logits: [Cat, Dog, Person]"]
+```
 
-## 🧠 Model Details
+### Layer Specification
 
-The classifier utilizes `CustomCnnModel`, a custom Convolutional Neural Network trained to classify $128 \times 128$ RGB images:
-
-| Layer Stage | Details | Activation / Pooling | Output Shape |
+| Stage | Layer Configuration | Activation | Output Dimensions |
 | :--- | :--- | :--- | :--- |
-| **Input** | RGB Image | Normalized $[-1, 1]$ | `(3, 128, 128)` |
-| **Conv Block 1** | Conv2d (3 $\to$ 32, $3\times3$, pad 1) + BatchNorm2d | ReLU + MaxPool2d($2\times2$) | `(32, 64, 64)` |
-| **Conv Block 2** | Conv2d (32 $\to$ 64, $3\times3$, pad 1) + BatchNorm2d | ReLU + MaxPool2d($2\times2$) | `(64, 32, 32)` |
-| **Conv Block 3** | Conv2d (64 $\to$ 128, $3\times3$, pad 1) + BatchNorm2d | ReLU + MaxPool2d($2\times2$) | `(128, 16, 16)` |
-| **Conv Block 4** | Conv2d (128 $\to$ 256, $3\times3$, pad 1) + BatchNorm2d | ReLU + MaxPool2d($2\times2$) | `(256, 8, 8)` |
+| **Input** | RGB Image Tensor | Normalized (mean=0.5, std=0.5) | `(3, 128, 128)` |
+| **Block 1** | Conv2d (3 $\to$ 32, $3\times3$) + BatchNorm | ReLU + MaxPool2d($2\times2$) | `(32, 64, 64)` |
+| **Block 2** | Conv2d (32 $\to$ 64, $3\times3$) + BatchNorm | ReLU + MaxPool2d($2\times2$) | `(64, 32, 32)` |
+| **Block 3** | Conv2d (64 $\to$ 128, $3\times3$) + BatchNorm | ReLU + MaxPool2d($2\times2$) | `(128, 16, 16)` |
+| **Block 4** | Conv2d (128 $\to$ 256, $3\times3$) + BatchNorm | ReLU + MaxPool2d($2\times2$) | `(256, 8, 8)` |
+| **Flatten** | Spatial Flattening | - | `(16384)` |
 | **Dense 1** | Linear ($16384 \to 512$) | ReLU | `(512)` |
 | **Dense 2** | Linear ($512 \to 128$) | ReLU | `(128)` |
-| **Output** | Linear ($128 \to 3$) | Logits $\to$ Argmax | `(3)` |
+| **Output** | Linear ($128 \to 3$) | Categorical Logits | `(3)` |
 
-### Classes:
-- `0`: **Cat**
-- `1`: **Dog**
-- `2`: **Person**
+### Target Classes
+
+- Index `0`: **Cat**
+- Index `1`: **Dog**
+- Index `2`: **Person**
 
 ---
 
-## 📁 Project Structure
+## Core Features
+
+- **In-Memory Inference**: Eliminates disk read/write cycles by streaming image arrays in memory between Gradio, PyTorch, and OpenCV.
+- **Hardware Acceleration Support**: Automatically detects and leverages CUDA GPUs when available; supports CPU execution and Hugging Face ZeroGPU runtime environments.
+- **Robust Input Handling**: Accommodates variable image dimensions, orientations, and formats with automated preprocessing and null checks.
+- **Git LFS Model Management**: Employs Git Large File Storage (LFS) to maintain repository integrity without bloating version control history.
+
+---
+
+## Repository Structure
 
 ```
 Simple_gradio_app/
-├── .gitattributes             # Git LFS configuration for *.pth weights
-├── .gitignore                 # Cache and temporary file exclusions
+├── .gitattributes             # Git LFS specifications for model checkpoints
+├── .gitignore                 # Exclusion rules for build artifacts and caches
+├── README.md                  # Technical documentation
 ├── requirements.txt           # Top-level dependencies
-├── README.md                  # Project documentation
 ├── core/
-│   ├── app.py                 # Gradio user interface application
-│   ├── predict.py             # Model definition and ImageClassifier pipeline
-│   └── requirements.txt       # Core package dependencies
+│   ├── app.py                 # Gradio interface definition and runtime entry
+│   ├── predict.py             # Neural network model and inference pipeline
+│   └── requirements.txt       # Module dependencies
 └── model/
+    ├── __init__.py            # Model module initialization
     └── cnn_128_model-100.pth  # Trained PyTorch model checkpoint (Git LFS)
 ```
 
 ---
 
-## 🚀 Getting Started
+## Installation and Setup
 
 ### Prerequisites
 
-- **Python**: Version 3.10, 3.11, or 3.12
-- **Git & Git LFS**: Ensure [Git LFS](https://git-lfs.github.com/) is installed to download the model checkpoint:
-  ```bash
-  git lfs install
-  ```
+- Python 3.10, 3.11, or 3.12
+- Git with [Git LFS](https://git-lfs.github.com/) installed
 
-### Installation
+### Environment Configuration
 
 1. **Clone the repository**:
    ```bash
@@ -120,106 +188,116 @@ Simple_gradio_app/
    cd Simple_gradio_app
    ```
 
-2. **Pull Git LFS weights**:
+2. **Pull binary model weights**:
    ```bash
+   git lfs install
    git lfs pull
    ```
 
-3. **Create and activate a virtual environment**:
+3. **Initialize virtual environment**:
    ```bash
-   # On macOS/Linux
+   # Linux / macOS
    python3 -m venv venv
    source venv/bin/activate
 
-   # On Windows
+   # Windows
    python -m venv venv
    venv\Scripts\activate
    ```
 
-4. **Install dependencies**:
-   ```bash
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
+### Dependencies
 
-### Running the App
+Install the required packages using the top-level requirements file:
 
-Launch the application:
+```bash
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+---
+
+## Usage
+
+### Local Execution
+
+Launch the Gradio application from the root directory:
 
 ```bash
 python core/app.py
 ```
 
-Once started, open your web browser and navigate to:
+Upon startup, the local server will be accessible at:
 ```
 http://127.0.0.1:7860
 ```
 
-To create a shareable public URL via Gradio tunnel, set `share=True` in `app.py`:
+### Public URL Generation
+
+To expose a shareable link via Gradio's reverse proxy, modify `core/app.py`:
+
 ```python
-demo.launch(share=True)
+if __name__ == "__main__":
+    demo.launch(share=True)
 ```
 
 ---
 
-## 🌐 Deployment
+## Deployment
 
-### Deploying to Hugging Face Spaces
+### Hugging Face Spaces
 
-1. Create a new Space on [Hugging Face](https://huggingface.co/new-space) using the **Gradio** SDK.
-2. Link your local repository to the Hugging Face remote:
+The project is structured to deploy to Hugging Face Spaces with minimal configuration:
+
+1. Create a Space on Hugging Face using the **Gradio** SDK.
+2. Add the Hugging Face remote repository:
    ```bash
-   git remote add space https://huggingface.co/spaces/<your-username>/<your-space-name>
+   git remote add space https://huggingface.co/spaces/<username>/<space-name>
    git push space main
    ```
-3. The application is pre-configured with `@spaces.GPU` and dynamic fallbacks, supporting both free CPU instances and ZeroGPU hardware.
+3. The codebase contains conditional imports for `spaces` and decorators (`@spaces.GPU`) to ensure operational compatibility with both standard CPU instances and dynamic ZeroGPU environments.
 
 ---
 
-## 💻 API Reference
+## API Reference
 
-### `ImageClassifier`
-
-Located in `core/predict.py`:
+The classification logic is exposed via `ImageClassifier` in `core/predict.py`:
 
 ```python
 from predict import ImageClassifier
 from PIL import Image
 
-# Initialize the classifier
+# Initialize classifier with checkpoint path
 classifier = ImageClassifier(model_path="model/cnn_128_model-100.pth")
 
-# Predict using a PIL image or file path
-image = Image.open("sample.jpg")
-label, annotated_image = classifier.predict(image)
+# Run prediction
+input_image = Image.open("sample.jpg")
+label, annotated_image = classifier.predict(input_image)
 
-print(f"Predicted class: {label}")
+print(f"Predicted Class: {label}")
 ```
 
----
+### Methods
 
-## 🛠 Troubleshooting
-
-<details>
-<summary><b>1. FileNotFoundError: Model file not found</b></summary>
-
-Ensure you have run `git lfs pull` after cloning so the binary `.pth` checkpoint is fetched instead of the Git LFS pointer file.
-</details>
-
-<details>
-<summary><b>2. OpenCV libGL.so.1 error in Linux/Docker</b></summary>
-
-The project uses `opencv-python-headless` in `requirements.txt` to avoid missing graphical X11/OpenGL dependencies on headless systems.
-</details>
-
-<details>
-<summary><b>3. Hugging Face ZeroGPU CUDA Error</b></summary>
-
-`spaces` must be imported at line 1 before `torch`. `app.py` is configured with a safe `try-except` block to ensure compatibility both locally and on ZeroGPU.
-</details>
+#### `ImageClassifier.predict(image_input)`
+- **Parameters**: `image_input` (*str | PIL.Image.Image | numpy.ndarray*) - File path or in-memory image object.
+- **Returns**: `tuple(label: str, annotated_image: PIL.Image.Image | str)` - Name of predicted class and the visually annotated image.
 
 ---
 
-## 📄 License
+## Troubleshooting
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+### Model Checkpoint Not Found
+- Verify that Git LFS has downloaded the actual binary file rather than the pointer:
+  ```bash
+  git lfs pull
+  ```
+- Ensure `model/cnn_128_model-100.pth` is approximately 35 MB in size.
+
+### Headless Server OpenCV Initialization
+- If deploying on a headless Linux environment, ensure `opencv-python-headless` is installed rather than `opencv-python` to prevent missing X11/OpenGL (`libGL.so.1`) runtime errors.
+
+---
+
+## License
+
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for complete terms.
