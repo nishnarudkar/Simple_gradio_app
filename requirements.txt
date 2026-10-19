@@ -1,1 +1,6 @@
-gradio
+gradio>=4.0.0
+torch
+torchvision
+opencv-python-headless
+pillow
+numpy
