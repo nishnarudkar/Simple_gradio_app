@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+core/__pycache__/
+core/uploaded_image.jpg
+core/labeled_image.jpg
+uploaded_image.jpg
+labeled_image.jpg
+.DS_Store
